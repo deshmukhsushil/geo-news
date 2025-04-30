@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: raw_articles
+      - name: summarized_articles
+
+models:
+  - name: summarized_articles
+    description: "LLM summaries of top news articles"
+    columns:
+      - name: summary
+        description: "3–5 bullet point summary from Cohere"
