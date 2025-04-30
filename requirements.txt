@@ -1,0 +1,10 @@
+streamlit
+fastapi
+uvicorn
+sqlalchemy
+snowflake-sqlalchemy
+python-dotenv
+requests
+dbt-core
+dbt-snowflake
+pydantic
