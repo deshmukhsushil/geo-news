@@ -1,37 +1,94 @@
 import streamlit as st
 import requests
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.sql import text
+from dotenv import load_dotenv
+from pathlib import Path
+from datetime import datetime
+from collections import defaultdict
 
-st.set_page_config(page_title="Geopolitical News Tracker", page_icon="🗞️")
+# Load environment variables
+env_path = Path(__file__).resolve().parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
-st.title("🗺️ Geopolitical News Tracker")
-st.markdown("Enter a keyword (e.g., `Russia`, `NATO`, `Iran`) to fetch and summarize news articles.")
+# Snowflake credentials
+user = os.getenv("SNOWFLAKE_USER")
+password = os.getenv("SNOWFLAKE_PASSWORD")
+account = os.getenv("SNOWFLAKE_ACCOUNT")
+database = os.getenv("SNOWFLAKE_DATABASE")
+schema = os.getenv("SNOWFLAKE_SCHEMA")
+warehouse = os.getenv("SNOWFLAKE_WAREHOUSE")
 
-# Input field for keyword
-keyword = st.text_input("🔍 Keyword", placeholder="e.g., Ukraine, sanctions, oil")
+# Cohere API key
+cohere_api_key = os.getenv("COHERE_API_KEY")
 
-# Button to trigger fetch and summarize
-if st.button("Fetch Summaries") and keyword:
-    with st.spinner(f"Fetching and summarizing news for: `{keyword}`"):
-        try:
-            # Adjust the URL if your FastAPI is hosted elsewhere
-            response = requests.get("http://localhost:8000/summarize", params={"keyword": keyword})
-            response.raise_for_status()
-            data = response.json()
+# Create Snowflake engine
+def create_snowflake_engine():
+    return create_engine(
+        f'snowflake://{user}:{password}@{account}/{database}/{schema}?warehouse={warehouse}'
+    )
 
-            if not data["results"]:
-                st.warning("No articles found for that keyword.")
-            else:
-                st.success(f"Found {len(data['results'])} summarized articles.")
-                for idx, item in enumerate(data["results"]):
-                    with st.expander(f"📰 {item['title']}"):
-                        st.markdown("**📝 Summary:**")
-                        st.markdown(item["summary"])
-                        st.markdown(f"🔗 [Read full article]({item['url']})", unsafe_allow_html=True)
+# Query Snowflake for latest articles for a keyword
+def get_articles_from_snowflake(keyword):
+    engine = create_snowflake_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT TITLE, DESCRIPTION, URL, CONTENT
+            FROM raw_articles
+            WHERE KEYWORD = :keyword
+            ORDER BY PUBLISHED_AT DESC
+            LIMIT 10
+        """), {"keyword": keyword})
+        return result.fetchall()
 
-        except requests.exceptions.RequestException as e:
-            st.error(f"🚨 API request failed: {e}")
-        except Exception as e:
-            st.error(f"Unexpected error: {e}")
+# Call Cohere to summarize the article
+def summarize_article_with_cohere(text_input):
+    headers = {
+        "Authorization": f"Bearer {cohere_api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "command-r-plus",
+        "prompt": f"Summarize this article in 3 bullet points:\n\n{text_input}",
+        "temperature": 0.3,
+        "max_tokens": 300
+    }
+    response = requests.post("https://api.cohere.ai/v1/generate", json=data, headers=headers)
+    if response.status_code == 200:
+        return response.json()['generations'][0]['text']
+    else:
+        return "Error in summarization"
 
-elif not keyword and st.button("Fetch Summaries"):
-    st.warning("Please enter a keyword before submitting.")
+# Streamlit UI
+st.title("Geopolitical News Summary App")
+st.markdown("Get summarized geopolitical news from multiple sources.")
+
+# Input box
+keyword = st.text_input("Enter a geopolitical keyword (e.g., NATO, China, Israel, Russia)", key="keyword_input")
+
+# Fetch summaries
+if st.button("Fetch Summaries", key="fetch_button") and keyword:
+    st.info(f"Searching articles for keyword: `{keyword}`...")
+    articles = get_articles_from_snowflake(keyword)
+
+    if not articles:
+        st.warning("No articles found for this keyword. Try a different one or run the backend fetcher.")
+    else:
+        st.success(f"Found {len(articles)} articles! Summarizing...")
+
+        for i, article in enumerate(articles):
+            st.subheader(f"{i+1}. {article.TITLE}")
+            st.write(article.DESCRIPTION)
+            st.markdown(f"[Read full article]({article.URL})")
+
+            with st.spinner("Summarizing..."):
+                summary = summarize_article_with_cohere(article.CONTENT or article.DESCRIPTION or article.TITLE)
+                st.markdown("**Summary:**")
+                st.markdown(summary.strip())
+
+            st.markdown("---")
+
+# Optional: Clear results
+if st.button("Clear Results", key="clear_button"):
+    st.experimental_rerun()
