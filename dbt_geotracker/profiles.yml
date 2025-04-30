@@ -1,0 +1,14 @@
+news_tracker_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: OXDBZUE-BD73088  #your snowflake account, no .snowflakecomputing.com
+      user: nonpoor
+      password: *s9z#MK%3*576%$8$
+      role: ACCOUNTADMIN
+      database: NEWS_PROJECT_DB
+      warehouse: COMPUTE_WH
+      schema: news_schema
+      threads: 1
+      client_session_keep_alive: False
