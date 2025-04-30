@@ -1,33 +1,37 @@
 import streamlit as st
-import duckdb
-import pandas as pd
+import requests
 
-def get_connection():
-    return duckdb.connect("duckdb/database.db")
+st.set_page_config(page_title="Geopolitical News Tracker", page_icon="🗞️")
 
-def load_data():
-    conn = get_connection()
-    df = conn.execute("SELECT * FROM clean_events").df()
-    conn.close()
-    return df
+st.title("🗺️ Geopolitical News Tracker")
+st.markdown("Enter a keyword (e.g., `Russia`, `NATO`, `Iran`) to fetch and summarize news articles.")
 
-def main():
-    st.set_page_config(page_title="Geopolitics Dashboard", layout="wide", initial_sidebar_state="expanded")
-    st.title("🌍 Geopolitical Events")
+# Input field for keyword
+keyword = st.text_input("🔍 Keyword", placeholder="e.g., Ukraine, sanctions, oil")
 
-    df = load_data()
+# Button to trigger fetch and summarize
+if st.button("Fetch Summaries") and keyword:
+    with st.spinner(f"Fetching and summarizing news for: `{keyword}`"):
+        try:
+            # Adjust the URL if your FastAPI is hosted elsewhere
+            response = requests.get("http://localhost:8000/summarize", params={"keyword": keyword})
+            response.raise_for_status()
+            data = response.json()
 
-    search_query = st.text_input("🔎 Search for Country / Title")
+            if not data["results"]:
+                st.warning("No articles found for that keyword.")
+            else:
+                st.success(f"Found {len(data['results'])} summarized articles.")
+                for idx, item in enumerate(data["results"]):
+                    with st.expander(f"📰 {item['title']}"):
+                        st.markdown("**📝 Summary:**")
+                        st.markdown(item["summary"])
+                        st.markdown(f"🔗 [Read full article]({item['url']})", unsafe_allow_html=True)
 
-    if search_query:
-        df = df[
-            df['sourcecountry'].str.contains(search_query, case=False, na=False) |
-            df['title'].str.contains(search_query, case=False, na=False)
-        ]
+        except requests.exceptions.RequestException as e:
+            st.error(f"🚨 API request failed: {e}")
+        except Exception as e:
+            st.error(f"Unexpected error: {e}")
 
-    st.dataframe(df, use_container_width=True)
-
-    st.bar_chart(df['sourcecountry'].value_counts())
-
-if __name__ == "__main__":
-    main()
+elif not keyword and st.button("Fetch Summaries"):
+    st.warning("Please enter a keyword before submitting.")
