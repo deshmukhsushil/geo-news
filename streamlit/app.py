@@ -1,12 +1,41 @@
-import streamlit as st
-import requests
 import os
+import streamlit as st
 from sqlalchemy import create_engine
-from sqlalchemy.sql import text
+import snowflake.connector
+from snowflake.sqlalchemy import URL
 from dotenv import load_dotenv
-from pathlib import Path
-from datetime import datetime
-from collections import defaultdict
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Function to get Snowflake connection
+def get_snowflake_connection():
+    # Get connection parameters from .env file
+    connection_parameters = {
+        "user": os.environ.get("SNOWFLAKE_USER"),
+        "password": os.environ.get("SNOWFLAKE_PASSWORD"),
+        "account": os.environ.get("SNOWFLAKE_ACCOUNT"),
+        "database": os.environ.get("SNOWFLAKE_DATABASE"),
+        "schema": os.environ.get("SNOWFLAKE_SCHEMA"),
+        "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE"),
+        "role": os.environ.get("SNOWFLAKE_ROLE"),  # Optional
+    }
+    
+    # Create URL for SQLAlchemy
+    snowflake_url = URL(
+        account=connection_parameters["account"],
+        user=connection_parameters["user"],
+        password=connection_parameters["password"],
+        database=connection_parameters["database"],
+        schema=connection_parameters["schema"],
+        warehouse=connection_parameters["warehouse"],
+        role=connection_parameters["role"]
+    )
+    
+    # Create engine
+    engine = create_engine(snowflake_url)
+    return engine
+
 
 # Load environment variables
 env_path = Path(__file__).resolve().parent.parent / '.env'
