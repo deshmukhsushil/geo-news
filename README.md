@@ -1,26 +1,164 @@
-# Geo News 🌏
+# Geo News 🌏 — Geopolitical News Tracker
 
-## Project Purpose
-Geo News is a web application that delivers the latest news articles tailored to the user's location. Utilizing advanced algorithms, we aim to provide localized content to enhance user engagement and relevance.
+A small data + app project that:
+1) fetches news articles by **keyword** (via NewsAPI),
+2) stores raw articles in **Snowflake**,
+3) generates LLM summaries using **Cohere** and stores them back in Snowflake,
+4) models curated tables with **dbt**, and
+5) displays results in a **Streamlit** UI.
 
-## Architecture
-The application is built around a microservices architecture, enabling scalability and efficient resource management. 
-Each service is responsible for a specific feature, communicating through RESTful APIs:
+> Note: The current code is keyword-driven. “Geo/location-based personalization” is not implemented in the files shown.
 
-- **Frontend**: Built with React.js, providing a dynamic user interface.
-- **Backend**: Node.js with Express framework, serving APIs for content management.
-- **Database**: MongoDB for flexible data storage and retrieval.
-- **Caching**: Redis to improve performance by caching frequently accessed data.
+---
 
-## Features
-- **Geolocation-Based News**: Automatically detect user location and provide localized news.
-- **Custom News Feed**: Users can personalize their news feed based on interests and preferences.
-- **Real-Time Updates**: Articles are updated in real-time, ensuring users have access to the latest news.
-- **User Authentication**: Secure user accounts enabling saving preferences and bookmarking articles.
-- **Admin Dashboard**: For managing articles, users, and analytics.
+## Tech Stack (as implemented)
 
-## Setup Instructions
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/GitUpAnd-Go/geo-news.git
-   cd geo-news
+- **UI**: Streamlit (`streamlit/app.py`, `project_root/app.py`)
+- **Data warehouse**: Snowflake (via `snowflake-sqlalchemy` / SQLAlchemy)
+- **Ingestion**: NewsAPI (`fetch_1.py`)
+- **Summarization**: Cohere (`summarize_article.py`, `project_root/cohere_utils.py`)
+- **Transformations / marts**: dbt + dbt-snowflake (`dbt_geotracker/`)
+- **API (planned/optional)**: FastAPI + Uvicorn (present in `requirements.txt`; `project_root/app.py` calls `http://localhost:8000/summarize`)
+
+---
+
+## Repository Structure
+
+- `streamlit/app.py`  
+  Streamlit app that queries Snowflake for the latest articles for a keyword and (optionally) summarizes content with Cohere.
+
+- `project_root/app.py`  
+  Alternate Streamlit UI that calls a local API endpoint (`/summarize`) on `localhost:8000`.
+
+- `fetch_1.py`  
+  CLI script:
+  - prompts for a keyword
+  - fetches up to 50 results from NewsAPI
+  - filters to max 5 articles per source
+  - inserts into a Snowflake table `raw_articles`
+
+- `summarize_article.py`  
+  Batch job:
+  - selects articles in `raw_articles` not yet present in `summarized_articles`
+  - calls Cohere Summarize
+  - inserts into `summarized_articles` with a `generated_at` timestamp
+
+- `dbt_geotracker/`  
+  dbt project that defines sources (`raw.raw_articles`, `raw.summarized_articles`) and builds a mart table joining raw + summaries.
+
+---
+
+## Data Model (Snowflake)
+
+The dbt project expects these sources:
+
+- `raw.raw_articles`
+- `raw.summarized_articles`
+
+The mart model `dbt_geotracker/models/marts/summarized_articles.sql` produces a table containing:
+
+- `article_id`
+- `title`
+- `url`
+- `published_at`
+- `source_name`
+- `keyword`
+- `summary`
+- `generated_at`
+
+---
+
+## Environment Variables
+
+Create a `.env` file (project root) with at least:
+
+- `SNOWFLAKE_USER`
+- `SNOWFLAKE_PASSWORD`
+- `SNOWFLAKE_ACCOUNT`
+- `SNOWFLAKE_DATABASE`
+- `SNOWFLAKE_SCHEMA`
+- `SNOWFLAKE_WAREHOUSE`
+
+- `NEWS_API_KEY` (for ingestion via NewsAPI)
+- `COHERE_API_KEY` (for summarization)
+
+> Security note: do **not** commit secrets (Snowflake passwords, API keys) to the repo.
+
+---
+
+## Setup
+
+### 1) Install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # (Windows: .venv\Scripts\activate)
+pip install -r requirements.txt
+```
+
+### 2) Configure `.env`
+
+Add your Snowflake, NewsAPI, and Cohere credentials (see above).
+
+---
+
+## Usage
+
+### A) Fetch raw articles into Snowflake
+
+`fetch_1.py` will ask for a keyword in the terminal and then insert articles into `raw_articles`.
+
+```bash
+python fetch_1.py
+```
+
+### B) Generate summaries into `summarized_articles`
+
+This job summarizes unsummarized rows and inserts into Snowflake.
+
+```bash
+python summarize_article.py
+```
+
+### C) Run dbt models (optional but recommended)
+
+From within `dbt_geotracker/`, configure a dbt profile and run:
+
+```bash
+cd dbt_geotracker
+dbt run
+```
+
+This will build the mart model (table) that joins raw articles and summaries.
+
+> The repo includes `dbt_geotracker/profiles.yml`, but you should typically use your user-level dbt profiles location and never store real credentials in git.
+
+### D) Run the Streamlit app
+
+Option 1 (Snowflake query UI):
+```bash
+streamlit run streamlit/app.py
+```
+
+Option 2 (API-calling UI; requires an API server on localhost:8000):
+```bash
+streamlit run project_root/app.py
+```
+
+---
+
+## Current Limitations / What’s *not* implemented (yet)
+
+Based on the files shown:
+- No actual geolocation detection or user-location personalization logic is present.
+- The FastAPI server that serves `GET /summarize` is not included in the snippets provided (but dependencies suggest it’s intended).
+
+---
+
+## Credits
+
+- News data: NewsAPI
+- Summaries: Cohere
+- Warehouse: Snowflake
+- Modeling: dbt
+- UI: Streamlit
