@@ -1,6 +1,4 @@
-# Geo News
-
-![Geo News]🌏
+# Geo News 🌏
 
 ## Project Purpose
 Geo News is a web application that delivers the latest news articles tailored to the user's location. Utilizing advanced algorithms, we aim to provide localized content to enhance user engagement and relevance.
